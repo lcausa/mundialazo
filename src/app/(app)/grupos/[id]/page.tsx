@@ -191,6 +191,12 @@ export default function GrupoDashboard() {
           >
             🏆 Ranking completo
           </button>
+          <button
+            onClick={() => router.push(`/grupos/${groupId}/info`)}
+            className="py-4 font-bold rounded-xl border border-white/20 hover:bg-white/10 transition text-sm col-span-2"
+          >
+            📋 Reglamento e Info
+          </button>
         </div>
 
       </div>

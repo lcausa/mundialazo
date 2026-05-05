@@ -17,6 +17,12 @@ export interface User {
   created_at: string
 }
 
+export interface PrizeSplit {
+  first:  number
+  second: number
+  third:  number
+}
+
 export interface Group {
   id: string
   slug: string
@@ -31,6 +37,10 @@ export interface Group {
   invite_code: string
   max_members: number
   prize_description?: string
+  rules?: string
+  entry_fee_clp?: number
+  prize_split?: PrizeSplit
+  predictions_close_at?: string
   created_at: string
 }
 

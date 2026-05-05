@@ -21,20 +21,49 @@ const STAGE_ORDER: MatchStage[] = ['group', 'r32', 'r16', 'qf', 'sf', 'third', '
 
 type PredMap = Record<string, { home: string; away: string; saved: boolean; locked: boolean }>
 
-export default function PronosticosPage() {
-  const supabase = createClient()
-  const params = useParams()
-  const router = useRouter()
-  const groupId = params.id as string
+function useCountdown(target: string | undefined) {
+  const [label, setLabel] = useState<{ text: string; closed: boolean }>({ text: '', closed: false })
 
-  const [group, setGroup]       = useState<Group | null>(null)
-  const [matches, setMatches]   = useState<Match[]>([])
-  const [predMap, setPredMap]   = useState<PredMap>({})
-  const [activeTab, setActiveTab] = useState<MatchStage>('group')
-  const [loading, setLoading]   = useState(true)
-  const [saving, setSaving]     = useState<string | null>(null)
-  const [toast, setToast]       = useState<{ msg: string; ok: boolean } | null>(null)
+  useEffect(() => {
+    if (!target) return
+    function tick() {
+      const diff = new Date(target!).getTime() - Date.now()
+      if (diff <= 0) {
+        setLabel({ text: '🔒 Pronósticos cerrados', closed: true })
+        return
+      }
+      const d = Math.floor(diff / 86400000)
+      const h = Math.floor((diff % 86400000) / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      setLabel({
+        text: `⏰ Cierre en: ${d > 0 ? `${d}d ` : ''}${h}h ${m}m`,
+        closed: false,
+      })
+    }
+    tick()
+    const id = setInterval(tick, 30000) // update every 30s
+    return () => clearInterval(id)
+  }, [target])
+
+  return label
+}
+
+export default function PronosticosPage() {
+  const supabase  = createClient()
+  const params    = useParams()
+  const router    = useRouter()
+  const groupId   = params.id as string
+
+  const [group,      setGroup]      = useState<Group | null>(null)
+  const [matches,    setMatches]    = useState<Match[]>([])
+  const [predMap,    setPredMap]    = useState<PredMap>({})
+  const [activeTab,  setActiveTab]  = useState<MatchStage>('group')
+  const [loading,    setLoading]    = useState(true)
+  const [saving,     setSaving]     = useState<string | null>(null)
+  const [toast,      setToast]      = useState<{ msg: string; ok: boolean } | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const countdown = useCountdown(group?.predictions_close_at)
 
   useEffect(() => { init() }, [groupId])
 
@@ -83,8 +112,8 @@ export default function PronosticosPage() {
 
   async function savePrediction(matchId: string) {
     const entry = predMap[matchId]
-    const home = parseInt(entry?.home ?? '', 10)
-    const away = parseInt(entry?.away ?? '', 10)
+    const home  = parseInt(entry?.home ?? '', 10)
+    const away  = parseInt(entry?.away ?? '', 10)
     if (isNaN(home) || isNaN(away)) {
       showToast('Ingresa ambos marcadores', false)
       return
@@ -94,11 +123,11 @@ export default function PronosticosPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('predictions').upsert(
       {
-        match_id:   matchId,
-        group_id:   groupId,
-        user_id:    user!.id,
-        pred_home:  home,
-        pred_away:  away,
+        match_id:  matchId,
+        group_id:  groupId,
+        user_id:   user!.id,
+        pred_home: home,
+        pred_away: away,
       },
       { onConflict: 'match_id,group_id,user_id' }
     )
@@ -120,15 +149,28 @@ export default function PronosticosPage() {
     }))
   }
 
-  function isLocked(match: Match) {
-    const pred = predMap[match.id]
-    return (pred?.locked ?? false) || new Date(match.starts_at) <= new Date()
+  function isLocked(match: Match): boolean {
+    const pred      = predMap[match.id]
+    const now       = new Date()
+    const matchStart = new Date(match.starts_at)
+
+    // Locked if prediction row is locked
+    if (pred?.locked) return true
+    // Locked if match already started
+    if (matchStart <= now) return true
+    // Locked if group-wide close date has passed
+    if (group?.predictions_close_at && new Date(group.predictions_close_at) <= now) return true
+
+    return false
   }
 
-  const stagesPresent = STAGE_ORDER.filter(s => matches.some(m => m.stage === s))
+  const stagesPresent  = STAGE_ORDER.filter(s => matches.some(m => m.stage === s))
   const visibleMatches = matches.filter(m => m.stage === activeTab)
-  const totalSaved = Object.values(predMap).filter(p => p.saved).length
-  const color = group ? `#${group.primary_color}` : '#00A86B'
+  const totalSaved     = Object.values(predMap).filter(p => p.saved).length
+  const color          = group ? `#${group.primary_color}` : '#00A86B'
+  const globalClosed   = group?.predictions_close_at
+    ? new Date(group.predictions_close_at) <= new Date()
+    : false
 
   if (loading) {
     return (
@@ -160,7 +202,21 @@ export default function PronosticosPage() {
 
       <div className="max-w-2xl mx-auto px-4 pt-6">
         <h1 className="text-3xl font-black mb-1">Pronósticos</h1>
-        <p className="text-sm text-gray-400 mb-6">{group.name}</p>
+        <p className="text-sm text-gray-400 mb-4">{group.name}</p>
+
+        {/* COUNTDOWN BANNER */}
+        {group.predictions_close_at && (
+          <div
+            className="mb-6 px-4 py-2.5 rounded-xl text-sm font-bold text-center"
+            style={
+              globalClosed
+                ? { backgroundColor: '#ffffff10', color: '#9ca3af' }
+                : { backgroundColor: `${color}18`, color }
+            }
+          >
+            {countdown.text}
+          </div>
+        )}
 
         {/* TABS */}
         <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
@@ -187,38 +243,39 @@ export default function PronosticosPage() {
           )}
 
           {visibleMatches.map(match => {
-            const locked = isLocked(match)
+            const locked   = isLocked(match)
             const finished = match.status === 'finished'
-            const pred = predMap[match.id]
+            const pred     = predMap[match.id]
 
             return (
               <div
                 key={match.id}
                 className="bg-white/5 border border-white/10 rounded-2xl p-4"
               >
-                {/* Fecha y hora */}
+                {/* Fecha, hora y estado */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs text-gray-500 capitalize">
                     {format(new Date(match.starts_at), "EEEE d MMM · HH:mm", { locale: es })}
                   </span>
-                  {locked && (
-                    <span className="text-xs text-gray-500 font-bold">🔒 Cerrado</span>
-                  )}
-                  {finished && pred?.saved && (
+                  {finished ? (
                     <span className="text-xs font-bold text-gray-400">Finalizado</span>
-                  )}
+                  ) : locked ? (
+                    <span className="text-xs text-gray-500 font-bold">🔒 Cerrado</span>
+                  ) : pred?.saved ? (
+                    <span className="text-xs font-bold" style={{ color }}>
+                      Editable hasta cierre
+                    </span>
+                  ) : null}
                 </div>
 
                 {/* Equipos e inputs */}
                 <div className="flex items-center gap-3">
 
-                  {/* Equipo local */}
                   <div className="flex-1 flex flex-col items-center gap-1">
                     <span className="text-2xl">{match.home_flag || '🏳️'}</span>
                     <span className="text-xs font-bold text-center leading-tight">{match.home_team}</span>
                   </div>
 
-                  {/* Marcador input/resultado */}
                   <div className="flex items-center gap-2">
                     {finished ? (
                       <>
@@ -233,10 +290,7 @@ export default function PronosticosPage() {
                     ) : (
                       <>
                         <input
-                          type="number"
-                          min={0}
-                          max={20}
-                          inputMode="numeric"
+                          type="number" min={0} max={20} inputMode="numeric"
                           disabled={locked}
                           value={pred?.home ?? ''}
                           onChange={e => updateScore(match.id, 'home', e.target.value)}
@@ -244,10 +298,7 @@ export default function PronosticosPage() {
                         />
                         <span className="text-gray-600 font-black">:</span>
                         <input
-                          type="number"
-                          min={0}
-                          max={20}
-                          inputMode="numeric"
+                          type="number" min={0} max={20} inputMode="numeric"
                           disabled={locked}
                           value={pred?.away ?? ''}
                           onChange={e => updateScore(match.id, 'away', e.target.value)}
@@ -257,33 +308,35 @@ export default function PronosticosPage() {
                     )}
                   </div>
 
-                  {/* Equipo visitante */}
                   <div className="flex-1 flex flex-col items-center gap-1">
                     <span className="text-2xl">{match.away_flag || '🏳️'}</span>
                     <span className="text-xs font-bold text-center leading-tight">{match.away_team}</span>
                   </div>
                 </div>
 
-                {/* Resultado real vs predicción (si terminó) */}
+                {/* Pronóstico guardado vs resultado */}
                 {finished && pred?.saved && (
                   <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-gray-400">
-                    <span>Tu pronóstico: <span className="font-bold text-white">{pred.home} - {pred.away}</span></span>
+                    <span>
+                      Tu pronóstico:{' '}
+                      <span className="font-bold text-white">{pred.home} - {pred.away}</span>
+                    </span>
                   </div>
                 )}
 
-                {/* Botón guardar */}
+                {/* Botón guardar / actualizar */}
                 {!locked && (
                   <button
                     onClick={() => savePrediction(match.id)}
                     disabled={saving === match.id}
                     className="mt-4 w-full py-2.5 rounded-xl text-sm font-bold text-black transition disabled:opacity-60"
-                    style={{ backgroundColor: pred?.saved ? '#ffffff22' : color }}
+                    style={{ backgroundColor: pred?.saved ? `${color}88` : color }}
                   >
                     {saving === match.id
                       ? 'Guardando...'
                       : pred?.saved
-                      ? '✓ Guardado'
-                      : 'Guardar'}
+                      ? '✓ Actualizar pronóstico'
+                      : 'Guardar pronóstico'}
                   </button>
                 )}
               </div>
