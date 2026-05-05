@@ -49,7 +49,7 @@ export default function DashboardPage() {
       .from('group_members')
       .select('group_id, points, group:groups(*)')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+      .order('joined_at', { ascending: false })
 
     console.log('[dashboard] memberships raw:', memberships, 'error:', memberError)
 
