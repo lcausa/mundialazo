@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 const AVATARS = ['⚽', '🏆', '🤖', '🦁', '🔥', '⚡', '🎯', '👑']
 
@@ -26,6 +26,8 @@ export default function OnboardingPage() {
   const [error, setError] = useState('')
   const supabase = createClient()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const returnTo = searchParams.get('returnTo') ?? ''
 
   async function saveProfile() {
     if (!name.trim()) {
@@ -56,7 +58,7 @@ export default function OnboardingPage() {
       setError('Error al guardar. Intenta de nuevo.')
       console.error(error)
     } else {
-      router.push('/grupos/nuevo')
+      router.push(returnTo || '/grupos/nuevo')
     }
     setLoading(false)
   }

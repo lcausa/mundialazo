@@ -67,6 +67,32 @@ export interface Prediction {
   created_at: string
 }
 
+export interface PowerUp {
+  id: string
+  name: string
+  description: string
+  effect: PowerUpEffect
+  icon: string
+  price_clp: number
+  is_active: boolean
+  created_at: string
+}
+
+export type UserPowerUpStatus = 'available' | 'used' | 'expired'
+
+export interface UserPowerUp {
+  id: string
+  user_id: string
+  group_id: string
+  powerup_id: string
+  status: UserPowerUpStatus
+  prediction_id?: string
+  used_at?: string
+  expires_at?: string
+  created_at: string
+  powerup?: PowerUp
+}
+
 export interface GroupMember {
   group_id: string
   user_id: string

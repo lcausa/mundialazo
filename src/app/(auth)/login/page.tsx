@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useSearchParams } from 'next/navigation'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -9,16 +10,21 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  const returnTo = searchParams.get('returnTo') ?? ''
 
   async function sendMagicLink() {
     if (!email) return
     setLoading(true)
     setError('')
+    const redirectPath = returnTo
+      ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}`
+      : '/onboarding'
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: `${window.location.origin}/onboarding`
+        emailRedirectTo: `${window.location.origin}${redirectPath}`,
       }
     })
     if (error) {
