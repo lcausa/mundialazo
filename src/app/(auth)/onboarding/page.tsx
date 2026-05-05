@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -17,7 +17,7 @@ const TEAMS = [
   'Otro'
 ]
 
-export default function OnboardingPage() {
+function OnboardingForm() {
   const [name, setName] = useState('')
   const [alias, setAlias] = useState('')
   const [avatar, setAvatar] = useState('⚽')
@@ -159,5 +159,13 @@ export default function OnboardingPage() {
 
       </div>
     </main>
+  )
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <OnboardingForm />
+    </Suspense>
   )
 }
