@@ -72,21 +72,36 @@ export default function NuevoGrupoPage() {
       .select()
       .single()
 
-    if (groupError) {
+    if (groupError || !group) {
       setError('Error al crear el grupo. Intenta de nuevo.')
-      console.error(groupError)
+      console.error('[nuevo grupo] groupError:', groupError)
       setLoading(false)
       return
     }
 
-    // Agregar al creador como admin
-    await supabase.from('group_members').insert({
-      group_id: group.id,
-      user_id: user.id,
-      role: 'admin',
-    })
+    console.log('[nuevo grupo] Grupo creado:', group.id)
 
-    router.push(`/grupos/${group.id}`)
+    // Agregar al creador como miembro admin
+    const { data: memberData, error: memberError } = await supabase
+      .from('group_members')
+      .insert({
+        group_id: group.id,
+        user_id: user.id,
+        role: 'admin',
+      })
+      .select()
+      .single()
+
+    if (memberError) {
+      setError('Grupo creado, pero hubo un error al agregarte. Recarga e intenta de nuevo.')
+      console.error('[nuevo grupo] memberError:', memberError)
+      setLoading(false)
+      return
+    }
+
+    console.log('[nuevo grupo] Miembro insertado:', memberData)
+
+    router.push('/dashboard')
     setLoading(false)
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -29,6 +29,16 @@ function OnboardingForm() {
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo') ?? ''
 
+  // Redirect immediately if profile already exists
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { router.replace('/login'); return }
+      const { data } = await supabase
+        .from('users').select('id').eq('id', user.id).maybeSingle()
+      if (data) router.replace(returnTo || '/dashboard')
+    })
+  }, [])
+
   async function saveProfile() {
     if (!name.trim()) {
       setError('El nombre es obligatorio')
@@ -39,7 +49,7 @@ function OnboardingForm() {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      router.push('/login')
+      router.replace('/login')
       return
     }
 
@@ -58,7 +68,7 @@ function OnboardingForm() {
       setError('Error al guardar. Intenta de nuevo.')
       console.error(error)
     } else {
-      router.push(returnTo || '/grupos/nuevo')
+      router.replace(returnTo || '/dashboard')
     }
     setLoading(false)
   }

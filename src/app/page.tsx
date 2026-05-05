@@ -1,6 +1,18 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 
-export default function Home() {
+export default async function Home() {
+  // Redirect authenticated users away from the landing
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from('users').select('id').eq('id', user.id).maybeSingle()
+    redirect(profile ? '/dashboard' : '/onboarding')
+  }
+
   return (
     <main className="min-h-screen bg-black text-white">
 

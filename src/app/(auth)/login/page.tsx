@@ -18,8 +18,8 @@ function LoginForm() {
     setLoading(true)
     setError('')
     const redirectPath = returnTo
-      ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}`
-      : '/onboarding'
+      ? `/auth/callback?returnTo=${encodeURIComponent(returnTo)}`
+      : '/auth/callback'
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {

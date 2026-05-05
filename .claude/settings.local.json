@@ -6,7 +6,10 @@
       "Bash(node -e \"require\\('date-fns/locale/es'\\)\")",
       "Skill(claude-api)",
       "Bash(node *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(npx next *)"
     ]
   }
 }
