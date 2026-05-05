@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { Group, User } from '@/types'
@@ -23,16 +23,41 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router   = useRouter()
 
-  const [profile, setProfile]   = useState<User | null>(null)
-  const [groups,  setGroups]    = useState<GroupWithMeta[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [debugInfo, setDebugInfo] = useState('')
+  const [profile,    setProfile]    = useState<User | null>(null)
+  const [userId,     setUserId]     = useState<string | null>(null)
+  const [groups,     setGroups]     = useState<GroupWithMeta[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [debugInfo,  setDebugInfo]  = useState('')
+
+  // Dropdown
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Delete modal
+  const [deleteTarget, setDeleteTarget] = useState<GroupWithMeta | null>(null)
+  const [deleting,     setDeleting]     = useState(false)
+
+  // Toast
+  const [toast,      setToast]      = useState<string | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   useEffect(() => { init() }, [])
 
   async function init() {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) { router.replace('/login'); return }
+    setUserId(user.id)
 
     const { data: profileData, error: profileError } = await supabase
       .from('users')
@@ -44,11 +69,14 @@ export default function DashboardPage() {
     if (!profileData) { router.replace('/onboarding'); return }
     setProfile(profileData as User)
 
-    // Single query: group_members joined with groups
+    await loadGroups(user.id)
+  }
+
+  async function loadGroups(uid: string) {
     const { data: memberships, error: memberError } = await supabase
       .from('group_members')
       .select('group_id, points, group:groups(*)')
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
       .order('joined_at', { ascending: false })
 
     console.log('[dashboard] memberships raw:', memberships, 'error:', memberError)
@@ -56,10 +84,11 @@ export default function DashboardPage() {
     if (memberError) {
       console.error('[dashboard] memberError:', memberError)
       setDebugInfo(`Error RLS/query: ${memberError.message} (code: ${memberError.code})`)
+      setLoading(false)
+      return
     }
     if (!memberships?.length) { setLoading(false); return }
 
-    // Enrich with member count and rank
     const enriched = await Promise.all(
       memberships.map(async (m: { group_id: string; points: number; group: unknown }) => {
         const g = m.group as Group
@@ -90,6 +119,34 @@ export default function DashboardPage() {
     console.log('[dashboard] Grupos cargados:', filtered)
     setGroups(filtered)
     setLoading(false)
+  }
+
+  async function deleteGroup() {
+    if (!deleteTarget || !userId) return
+    setDeleting(true)
+
+    const { error } = await supabase
+      .from('groups')
+      .delete()
+      .eq('id', deleteTarget.id)
+      .eq('owner_id', userId)
+
+    setDeleting(false)
+    setDeleteTarget(null)
+
+    if (error) {
+      console.error('[dashboard] deleteError:', error)
+      showToast('Error al eliminar el grupo')
+    } else {
+      setGroups(prev => prev.filter(g => g.id !== deleteTarget.id))
+      showToast('Grupo eliminado')
+    }
+  }
+
+  function showToast(msg: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast(msg)
+    toastTimer.current = setTimeout(() => setToast(null), 3000)
   }
 
   async function signOut() {
@@ -171,7 +228,10 @@ export default function DashboardPage() {
 
         {/* GROUP CARDS */}
         {groups.map(g => {
-          const color = `#${g.primary_color}`
+          const color   = `#${g.primary_color}`
+          const isOwner = g.owner_id === userId
+          const menuOpen = openMenuId === g.id
+
           return (
             <div
               key={g.id}
@@ -194,18 +254,59 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Rank badge */}
-                {g.myPosition !== null && (
-                  <div
-                    className="flex-shrink-0 text-center px-3 py-1.5 rounded-xl"
-                    style={{ backgroundColor: `${color}22` }}
-                  >
-                    <div className="font-black text-lg leading-none" style={{ color }}>
-                      #{g.myPosition}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Rank badge */}
+                  {g.myPosition !== null && (
+                    <div
+                      className="text-center px-3 py-1.5 rounded-xl"
+                      style={{ backgroundColor: `${color}22` }}
+                    >
+                      <div className="font-black text-lg leading-none" style={{ color }}>
+                        #{g.myPosition}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">{g.myPoints} pts</div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5">{g.myPoints} pts</div>
-                  </div>
-                )}
+                  )}
+
+                  {/* 3-dot menu — owner only */}
+                  {isOwner && (
+                    <div className="relative" ref={menuOpen ? menuRef : null}>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          setOpenMenuId(menuOpen ? null : g.id)
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition text-lg leading-none"
+                        aria-label="Opciones del grupo"
+                      >
+                        ⋮
+                      </button>
+
+                      {menuOpen && (
+                        <div className="absolute right-0 top-9 z-20 w-40 bg-black border border-white/20 rounded-lg shadow-xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-100">
+                          <button
+                            onClick={() => {
+                              setOpenMenuId(null)
+                              router.push(`/grupos/${g.id}/admin`)
+                            }}
+                            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-white/10 transition text-left"
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button
+                            onClick={() => {
+                              setOpenMenuId(null)
+                              setDeleteTarget(g)
+                            }}
+                            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition text-left"
+                          >
+                            🗑️ Eliminar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center justify-between">
@@ -229,6 +330,51 @@ export default function DashboardPage() {
         })}
 
       </div>
+
+      {/* ── DELETE CONFIRMATION MODAL ─────────────────────────────────── */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null) }}
+        >
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setDeleteTarget(null)} />
+          <div className="relative z-10 w-full max-w-sm bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 flex flex-col gap-5">
+            <div className="text-3xl text-center">🗑️</div>
+            <div className="text-center">
+              <h2 className="font-black text-lg mb-2">¿Eliminar grupo?</h2>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                ¿Seguro que quieres eliminar{' '}
+                <span className="text-white font-bold">{deleteTarget.name}</span>?
+                Esta acción no se puede deshacer y se perderán todos los pronósticos.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={deleteGroup}
+                disabled={deleting}
+                className="w-full py-3 rounded-xl font-bold text-white transition disabled:opacity-60"
+                style={{ backgroundColor: '#EF4444' }}
+              >
+                {deleting ? 'Eliminando...' : 'Eliminar definitivamente'}
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="w-full py-3 rounded-xl font-bold text-gray-400 border border-white/10 hover:bg-white/10 transition disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOAST ─────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-2xl bg-white/10 border border-white/20 text-sm font-bold shadow-xl backdrop-blur-sm">
+          {toast}
+        </div>
+      )}
     </main>
   )
 }
